@@ -6,6 +6,8 @@ import networkx as nx
 app = Flask(__name__)
 api = Api(app)
 
+print("Starting Flask application...")
+
 locations = {
     "1300 Residence Hall" : [-75.15635994812898, 39.977970171375404],
     "1700 N. Broad St" : [-75.15831223243522, -39.979235375710694],
@@ -70,6 +72,14 @@ locations = {
 
 # Creates a graph of Temple University's campus and it's walking paths
 G = ox.graph_from_place('Temple University, Philadelphia, PA', network_type='walk')
+print("Road network created")
+
+# Converts Locations to Nearest Nodes
+location_nodes = {}
+for location, coords in locations.items():
+    node = ox.distance.nearest_nodes(G, coords[0], coords[1])
+    location_nodes[location] = node
+print("Nodes have been established")
 
 # Implements Dijkstra's algorithm to find the shortest path between two locations
 def dijkstra_osmnx(graph, start, end):
@@ -77,31 +87,40 @@ def dijkstra_osmnx(graph, start, end):
     distance = nx.shortest_path_length(graph, source=start, target=end, weight='length')
     return path, distance
 
-# Converts Locations to Nearest Nodes
-location_nodes = {}
-for location, coords in locations.items():
-    node = ox.distance.nearest_nodes(G, coords[0], coords[1])
-    location_nodes[location] = node
+def node_to_location_name(node):
+    for name, n in location_nodes.items():
+        if n == node:
+            return name
+    return str(node)
 
-class TempleMaps(Resource):
+class ShortestPath(Resource):
     def get(self):
+        print("Received request for shortest path.")
         start = request.args.get('start')
         end = request.args.get('end')
         
         if start not in location_nodes or end not in location_nodes:
-            return {'error': 'Invalid location'}, 400
+            print("Invalid start or end location.")
+            return {'error': 'Invalid start or end location'}, 400
         
         start_node = location_nodes[start]
         end_node = location_nodes[end]
         
         path, distance = dijkstra_osmnx(G, start_node, end_node)
-
-        path_coords = [ox.graph_to_gdfs(G, nodes=[node], edges=False).geometry.iloc[0].coords[0] for node in path]
-        path_names = [next(name for name, node in location_nodes.items() if node == p) for p in path]
-
+        
+        # Convert path nodes back to location names
+        path_names = [node_to_location_name(node) for node in path]
+        
+        print("Path found:", path_names)
         return {'path': path_names, 'distance_miles': distance * 0.000621371}  # Convert meters to miles
 
-api.add_resource(TempleMaps, '/maps')
+api.add_resource(ShortestPath, '/shortest_path')
+
+print("Endpoint /shortest_path registered.")
 
 if __name__ == '__main__':
+    print("Running Flask app...")
+    print("Start node:", location_nodes.get("1300 Residence Hall"))
+    print("End node:", location_nodes.get("Alter Hall"))
+
     app.run(debug=True)
